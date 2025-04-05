@@ -6,6 +6,7 @@
     "scripts": {
         "dev": "node esbuild.config.mjs",
         "build": "tsc -noEmit -skipLibCheck && node esbuild.config.mjs production",
+        "install-plugin": "npm run build && rm -rf ~/.obsidian/plugins/obsidian-s3-image-uploader* && mkdir -p ~/.obsidian/plugins/obsidian-s3-image-uploader-pro && cp main.js manifest.json ~/.obsidian/plugins/obsidian-s3-image-uploader-pro/",
         "version": "node version-bump.mjs && git add manifest.json versions.json"
     },
     "keywords": [
