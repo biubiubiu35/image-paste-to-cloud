@@ -1,9 +1,9 @@
 {
-    "id": "obsidian-s3-image-uploader-pro",
-    "name": "S3 Image Uploader Pro",
+    "id": "obsidian-object-storage-uploader",
+    "name": "Obsidian Object Storage Uploader",
     "version": "1.0.0",
     "minAppVersion": "0.15.0",
-    "description": "A simple and efficient S3 image upload plugin for Obsidian",
+    "description": "A simple and efficient plugin for uploading images to various object storage services (AWS S3, Cloudflare R2, etc.)",
     "author": "Your Name",
     "authorUrl": "https://github.com/yourusername",
     "isDesktopOnly": false

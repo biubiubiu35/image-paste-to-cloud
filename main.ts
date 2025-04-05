@@ -1,5 +1,5 @@
 import { Plugin, Editor, Notice, Setting, App, PluginSettingTab } from 'obsidian';
-import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
+import { S3Client, PutObjectCommand, HeadObjectCommand } from '@aws-sdk/client-s3';
 import { createHash } from 'crypto';
 
 interface S3ImageUploaderSettings {
@@ -31,36 +31,126 @@ function getS3Endpoint(region: string): string {
     return `https://s3.${region}.amazonaws.com`;
 }
 
+class FileNamingService {
+    constructor(
+        private settings: S3ImageUploaderSettings,
+        private s3Client: S3Client
+    ) {}
+
+    // 生成云端存储路径
+    async generateCloudPath(file: File): Promise<string> {
+        const ext = file.name.split('.').pop()?.toLowerCase() || '';
+        const originalName = file.name.slice(0, -(ext.length + 1)).replace(/[^a-zA-Z0-9]/g, '-');
+        
+        // 获取当前日期
+        const now = new Date();
+        const year = now.getFullYear();
+        const month = String(now.getMonth() + 1).padStart(2, '0');
+        const day = String(now.getDate()).padStart(2, '0');
+        const dateStr = `${year}/${month}/${day}`;
+        
+        // 计算文件内容的哈希值（取前8位）
+        const arrayBuffer = await file.arrayBuffer();
+        const hash = createHash('md5').update(Buffer.from(arrayBuffer)).digest('hex').slice(0, 8);
+        
+        // 生成文件名：原文件名-短哈希.扩展名
+        const fileName = `${originalName}-${hash}.${ext}`;
+        
+        return `${this.settings.pathPrefix}${dateStr}/${fileName}`;
+    }
+}
+
 export default class S3ImageUploader extends Plugin {
     settings: S3ImageUploaderSettings;
     s3Client: S3Client;
+    namingService: FileNamingService;
 
     async onload() {
         await this.loadSettings();
         this.initializeS3Client();
+        this.namingService = new FileNamingService(this.settings, this.s3Client);
 
-        // 注册粘贴事件
+        this.addSettingTab(new S3ImageUploaderSettingTab(this.app, this));
+
         this.registerEvent(
             this.app.workspace.on('editor-paste', async (evt: ClipboardEvent, editor: Editor) => {
-                if (evt.clipboardData?.files.length) {
-                    evt.preventDefault();
-                    await this.handlePaste(evt.clipboardData.files, editor);
+                if (!evt.clipboardData) return;
+
+                const items = evt.clipboardData.items;
+                for (let i = 0; i < items.length; i++) {
+                    const item = items[i];
+                    if (item.type.startsWith('image/')) {
+                        evt.preventDefault();
+                        const file = item.getAsFile();
+                        if (file) {
+                            try {
+                                const url = await this.uploadImage(file);
+                                editor.replaceSelection(`![](${url})`);
+                            } catch (error) {
+                                console.error('Failed to upload image:', error);
+                                new Notice('Failed to upload image. Please check the console for details.');
+                            }
+                        }
+                    }
                 }
             })
         );
 
-        // 注册拖拽事件
         this.registerEvent(
             this.app.workspace.on('editor-drop', async (evt: DragEvent, editor: Editor) => {
-                if (evt.dataTransfer?.files.length) {
-                    evt.preventDefault();
-                    await this.handlePaste(evt.dataTransfer.files, editor);
+                if (!evt.dataTransfer) return;
+
+                const items = evt.dataTransfer.items;
+                for (let i = 0; i < items.length; i++) {
+                    const item = items[i];
+                    if (item.kind === 'file' && item.type.startsWith('image/')) {
+                        evt.preventDefault();
+                        const file = item.getAsFile();
+                        if (file) {
+                            try {
+                                const url = await this.uploadImage(file);
+                                editor.replaceSelection(`![](${url})`);
+                            } catch (error) {
+                                console.error('Failed to upload image:', error);
+                                new Notice('Failed to upload image. Please check the console for details.');
+                            }
+                        }
+                    }
                 }
             })
         );
 
-        // 添加设置标签
-        this.addSettingTab(new S3ImageUploaderSettingTab(this.app, this));
+        this.addCommand({
+            id: 'insert-image',
+            name: 'Insert Image',
+            editorCallback: async (editor: Editor) => {
+                const input = document.createElement('input');
+                input.type = 'file';
+                input.accept = 'image/*';
+                input.onchange = async (e) => {
+                    const file = (e.target as HTMLInputElement).files?.[0];
+                    if (file) {
+                        try {
+                            const url = await this.uploadImage(file);
+                            editor.replaceSelection(`![](${url})`);
+                        } catch (error) {
+                            console.error('Failed to upload image:', error);
+                            new Notice('Failed to upload image. Please check the console for details.');
+                        }
+                    }
+                };
+                input.click();
+            }
+        });
+    }
+
+    async loadSettings() {
+        this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+    }
+
+    async saveSettings() {
+        await this.saveData(this.settings);
+        this.initializeS3Client();
     }
 
     initializeS3Client() {
@@ -72,7 +162,7 @@ export default class S3ImageUploader extends Plugin {
                 secretAccessKey: this.settings.secretAccessKey,
             },
             endpoint: endpoint,
-            forcePathStyle: true,
+            forcePathStyle: false,
         });
     }
 
@@ -90,18 +180,33 @@ export default class S3ImageUploader extends Plugin {
         }
     }
 
+    // 生成友好的文件名
+    private generateFriendlyFilename(file: File): string {
+        // 获取当前日期，格式：YYYY/MM/DD
+        const now = new Date();
+        const year = now.getFullYear();
+        const month = String(now.getMonth() + 1).padStart(2, '0');
+        const day = String(now.getDate()).padStart(2, '0');
+        const dateStr = `${year}/${month}/${day}`;
+        
+        // 处理原始文件名
+        const originalName = file.name;
+        const ext = originalName.split('.').pop()?.toLowerCase() || '';
+        const baseName = originalName.slice(0, -(ext.length + 1));
+        
+        // 生成友好文件名：日期/原始文件名-随机字符串.扩展名
+        // 使用原始文件名的前20个字符，避免文件名过长
+        const friendlyBaseName = baseName.slice(0, 20).replace(/[^a-zA-Z0-9]/g, '-');
+        const randomStr = Math.random().toString(36).substring(2, 8);
+        return `${dateStr}/${friendlyBaseName}-${randomStr}.${ext}`;
+    }
+
     async uploadImage(file: File): Promise<string> {
         const arrayBuffer = await file.arrayBuffer();
         const buffer = Buffer.from(arrayBuffer);
         
-        // 计算文件内容的哈希值
-        const hash = createHash('sha256').update(buffer).digest('hex');
-        
-        // 获取文件扩展名
-        const ext = file.name.split('.').pop()?.toLowerCase() || '';
-        
-        // 生成文件名：哈希值 + 扩展名
-        const key = `${this.settings.pathPrefix}${hash}.${ext}`;
+        // 生成存储路径
+        const key = await this.namingService.generateCloudPath(file);
 
         try {
             const command = new PutObjectCommand({
@@ -112,14 +217,10 @@ export default class S3ImageUploader extends Plugin {
             });
 
             await this.s3Client.send(command);
-            const endpoint = this.settings.endpoint || getS3Endpoint(this.settings.region);
-            return `${endpoint}/${this.settings.bucket}/${key}`;
+            // 确保返回的 URL 与上传路径完全匹配
+            return `https://${this.settings.bucket}.s3.${this.settings.region}.amazonaws.com/${key}`;
         } catch (error) {
-            // 如果文件已存在（可能是并发上传），直接返回URL
-            if (error.name === 'BucketAlreadyOwnedByYou') {
-                const endpoint = this.settings.endpoint || getS3Endpoint(this.settings.region);
-                return `${endpoint}/${this.settings.bucket}/${key}`;
-            }
+            console.error('Upload failed:', error);
             throw error;
         }
     }
@@ -129,23 +230,23 @@ export default class S3ImageUploader extends Plugin {
         const markdownImage = `![${fileName}](${url})`;
         editor.replaceRange(markdownImage, cursor);
     }
-
-    async loadSettings() {
-        this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
-    }
-
-    async saveSettings() {
-        await this.saveData(this.settings);
-        this.initializeS3Client();
-    }
 }
 
 class S3ImageUploaderSettingTab extends PluginSettingTab {
     plugin: S3ImageUploader;
+    tempSettings: S3ImageUploaderSettings;
 
     constructor(app: App, plugin: S3ImageUploader) {
         super(app, plugin);
         this.plugin = plugin;
+        this.tempSettings = Object.assign({}, plugin.settings);
+    }
+
+    async saveSettings() {
+        Object.assign(this.plugin.settings, this.tempSettings);
+        await this.plugin.saveData(this.plugin.settings);
+        this.plugin.initializeS3Client();
+        new Notice('Settings saved successfully!');
     }
 
     display(): void {
@@ -160,10 +261,9 @@ class S3ImageUploaderSettingTab extends PluginSettingTab {
             .setDesc('Your AWS S3 Access Key ID')
             .addText(text => text
                 .setPlaceholder('Enter your access key ID')
-                .setValue(this.plugin.settings.accessKeyId)
+                .setValue(this.tempSettings.accessKeyId)
                 .onChange(async (value) => {
-                    this.plugin.settings.accessKeyId = value;
-                    await this.plugin.saveSettings();
+                    this.tempSettings.accessKeyId = value;
                 }));
 
         new Setting(containerEl)
@@ -171,10 +271,9 @@ class S3ImageUploaderSettingTab extends PluginSettingTab {
             .setDesc('Your AWS S3 Secret Access Key')
             .addText(text => text
                 .setPlaceholder('Enter your secret access key')
-                .setValue(this.plugin.settings.secretAccessKey)
+                .setValue(this.tempSettings.secretAccessKey)
                 .onChange(async (value) => {
-                    this.plugin.settings.secretAccessKey = value;
-                    await this.plugin.saveSettings();
+                    this.tempSettings.secretAccessKey = value;
                 }));
 
         new Setting(containerEl)
@@ -182,10 +281,9 @@ class S3ImageUploaderSettingTab extends PluginSettingTab {
             .setDesc('AWS Region (e.g., us-east-1, ap-northeast-1)')
             .addText(text => text
                 .setPlaceholder('Enter region')
-                .setValue(this.plugin.settings.region)
+                .setValue(this.tempSettings.region)
                 .onChange(async (value) => {
-                    this.plugin.settings.region = value;
-                    await this.plugin.saveSettings();
+                    this.tempSettings.region = value;
                 }));
 
         new Setting(containerEl)
@@ -193,10 +291,9 @@ class S3ImageUploaderSettingTab extends PluginSettingTab {
             .setDesc('S3 Bucket Name')
             .addText(text => text
                 .setPlaceholder('Enter bucket name')
-                .setValue(this.plugin.settings.bucket)
+                .setValue(this.tempSettings.bucket)
                 .onChange(async (value) => {
-                    this.plugin.settings.bucket = value;
-                    await this.plugin.saveSettings();
+                    this.tempSettings.bucket = value;
                 }));
 
         new Setting(containerEl)
@@ -204,10 +301,9 @@ class S3ImageUploaderSettingTab extends PluginSettingTab {
             .setDesc('Optional: Custom S3 endpoint URL. Leave empty to use AWS default endpoint (https://s3.{region}.amazonaws.com). Only required for custom S3-compatible services.')
             .addText(text => text
                 .setPlaceholder('Enter custom endpoint URL (optional)')
-                .setValue(this.plugin.settings.endpoint)
+                .setValue(this.tempSettings.endpoint)
                 .onChange(async (value) => {
-                    this.plugin.settings.endpoint = value;
-                    await this.plugin.saveSettings();
+                    this.tempSettings.endpoint = value;
                 }));
 
         new Setting(containerEl)
@@ -215,10 +311,18 @@ class S3ImageUploaderSettingTab extends PluginSettingTab {
             .setDesc('Path prefix for uploaded images (e.g., images/ or notes/images/)')
             .addText(text => text
                 .setPlaceholder('Enter path prefix')
-                .setValue(this.plugin.settings.pathPrefix)
+                .setValue(this.tempSettings.pathPrefix)
                 .onChange(async (value) => {
-                    this.plugin.settings.pathPrefix = value;
-                    await this.plugin.saveSettings();
+                    this.tempSettings.pathPrefix = value;
+                }));
+
+        // 添加保存按钮
+        new Setting(containerEl)
+            .addButton(button => button
+                .setButtonText('Save Settings')
+                .setCta()
+                .onClick(async () => {
+                    await this.saveSettings();
                 }));
     }
 } 
