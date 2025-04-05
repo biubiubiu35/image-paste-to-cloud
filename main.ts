@@ -49,28 +49,42 @@ class R2Config implements StorageServiceConfig {
 interface S3ImageUploaderSettings {
     // 存储服务类型
     serviceType: 's3' | 'r2';
-    // 访问密钥 ID
-    accessKeyId: string;
-    // 访问密钥
-    secretAccessKey: string;
-    // 区域
-    region: string;
-    // 存储桶名称
-    bucket: string;
-    // 自定义域名（用于 CDN）
-    customDomain: string;
-    // 图片存储路径前缀
-    pathPrefix: string;
+    // S3 配置
+    s3Config: {
+        accessKeyId: string;
+        secretAccessKey: string;
+        region: string;
+        bucket: string;
+        customDomain: string;
+        pathPrefix: string;
+    };
+    // R2 配置
+    r2Config: {
+        accessKeyId: string;
+        secretAccessKey: string;
+        bucket: string;
+        customDomain: string;
+        pathPrefix: string;
+    };
 }
 
 const DEFAULT_SETTINGS: S3ImageUploaderSettings = {
     serviceType: 's3',
-    accessKeyId: '',
-    secretAccessKey: '',
-    region: 'us-east-1',
-    bucket: '',
-    customDomain: '',
-    pathPrefix: 'images/'
+    s3Config: {
+        accessKeyId: '',
+        secretAccessKey: '',
+        region: 'us-east-1',
+        bucket: '',
+        customDomain: '',
+        pathPrefix: 'images/'
+    },
+    r2Config: {
+        accessKeyId: '',
+        secretAccessKey: '',
+        bucket: '',
+        customDomain: '',
+        pathPrefix: 'images/'
+    }
 };
 
 class FileNamingService {
@@ -79,8 +93,11 @@ class FileNamingService {
         private s3Client: S3Client
     ) {}
 
-    // 生成云端存储路径
     async generateCloudPath(file: File): Promise<string> {
+        const config = this.settings.serviceType === 's3' 
+            ? this.settings.s3Config 
+            : this.settings.r2Config;
+
         const ext = file.name.split('.').pop()?.toLowerCase() || '';
         const originalName = file.name.slice(0, -(ext.length + 1)).replace(/[^a-zA-Z0-9]/g, '-');
         
@@ -98,7 +115,7 @@ class FileNamingService {
         // 生成文件名：原文件名-短哈希.扩展名
         const fileName = `${originalName}-${hash}.${ext}`;
         
-        return `${this.settings.pathPrefix}${dateStr}/${fileName}`;
+        return `${config.pathPrefix}${dateStr}/${fileName}`;
     }
 }
 
@@ -120,21 +137,39 @@ export default class S3ImageUploader extends Plugin {
     }
 
     private initializeStorageConfig() {
-        this.storageConfig = this.settings.serviceType === 's3'
-            ? new S3Config(this.settings.region, this.settings.customDomain)
-            : new R2Config(this.settings.customDomain);
+        if (this.settings.serviceType === 's3') {
+            const config = this.settings.s3Config;
+            this.storageConfig = new S3Config(config.region, config.customDomain);
+        } else {
+            const config = this.settings.r2Config;
+            this.storageConfig = new R2Config(config.customDomain);
+        }
     }
 
     private initializeS3Client() {
-        this.s3Client = new S3Client({
-            region: this.storageConfig.getRegion(),
-            credentials: {
-                accessKeyId: this.settings.accessKeyId,
-                secretAccessKey: this.settings.secretAccessKey,
-            },
-            endpoint: this.storageConfig.getEndpoint(this.settings.bucket),
-            forcePathStyle: false,
-        });
+        if (this.settings.serviceType === 's3') {
+            const config = this.settings.s3Config;
+            this.s3Client = new S3Client({
+                region: this.storageConfig.getRegion(),
+                credentials: {
+                    accessKeyId: config.accessKeyId,
+                    secretAccessKey: config.secretAccessKey,
+                },
+                endpoint: this.storageConfig.getEndpoint(config.bucket),
+                forcePathStyle: false,
+            });
+        } else {
+            const config = this.settings.r2Config;
+            this.s3Client = new S3Client({
+                region: this.storageConfig.getRegion(),
+                credentials: {
+                    accessKeyId: config.accessKeyId,
+                    secretAccessKey: config.secretAccessKey,
+                },
+                endpoint: this.storageConfig.getEndpoint(config.bucket),
+                forcePathStyle: false,
+            });
+        }
     }
 
     private registerEventHandlers() {
@@ -203,6 +238,10 @@ export default class S3ImageUploader extends Plugin {
     }
 
     async uploadImage(file: File): Promise<string> {
+        const config = this.settings.serviceType === 's3' 
+            ? this.settings.s3Config 
+            : this.settings.r2Config;
+
         const arrayBuffer = await file.arrayBuffer();
         const buffer = Buffer.from(arrayBuffer);
         
@@ -211,14 +250,14 @@ export default class S3ImageUploader extends Plugin {
 
         try {
             const command = new PutObjectCommand({
-                Bucket: this.settings.bucket,
+                Bucket: config.bucket,
                 Key: key,
                 Body: buffer,
                 ContentType: file.type,
             });
 
             await this.s3Client.send(command);
-            return this.storageConfig.getFileUrl(this.settings.bucket, key);
+            return this.storageConfig.getFileUrl(config.bucket, key);
         } catch (error) {
             console.error('Upload failed:', error);
             throw error;
@@ -239,6 +278,7 @@ export default class S3ImageUploader extends Plugin {
 class S3ImageUploaderSettingTab extends PluginSettingTab {
     plugin: S3ImageUploader;
     tempSettings: S3ImageUploaderSettings;
+    private settingsContainer: HTMLElement;
 
     constructor(app: App, plugin: S3ImageUploader) {
         super(app, plugin);
@@ -252,6 +292,7 @@ class S3ImageUploaderSettingTab extends PluginSettingTab {
 
         containerEl.createEl('h2', { text: 'Object Storage Settings' });
 
+        // 创建服务类型选择器
         new Setting(containerEl)
             .setName('Service Type')
             .setDesc('Select storage service type')
@@ -261,74 +302,174 @@ class S3ImageUploaderSettingTab extends PluginSettingTab {
                 .setValue(this.tempSettings.serviceType)
                 .onChange(async (value: 's3' | 'r2') => {
                     this.tempSettings.serviceType = value;
-                    if (value === 'r2') {
-                        this.tempSettings.region = 'auto';
-                    }
+                    this.renderSettings();
                 }));
 
-        new Setting(containerEl)
+        // 创建设置容器
+        this.settingsContainer = containerEl.createDiv('settings-container');
+        this.renderSettings();
+    }
+
+    private renderSettings() {
+        // 清空设置容器
+        this.settingsContainer.empty();
+
+        // 创建服务特定的说明
+        const serviceDesc = this.settingsContainer.createDiv('service-description');
+        if (this.tempSettings.serviceType === 's3') {
+            serviceDesc.createEl('p', { text: 'AWS S3 Configuration' });
+            serviceDesc.createEl('p', { 
+                text: 'For AWS S3, you can use CloudFront or other CDN services for acceleration.',
+                cls: 'setting-item-description'
+            });
+            this.renderS3Settings();
+        } else {
+            serviceDesc.createEl('p', { text: 'Cloudflare R2 Configuration' });
+            serviceDesc.createEl('p', { 
+                text: 'For R2, you can use Cloudflare\'s built-in CDN capabilities.',
+                cls: 'setting-item-description'
+            });
+            this.renderR2Settings();
+        }
+
+        // 创建保存按钮
+        this.createSaveButton();
+    }
+
+    private renderS3Settings() {
+        const config = this.tempSettings.s3Config;
+
+        // Access Key ID
+        new Setting(this.settingsContainer)
             .setName('Access Key ID')
-            .setDesc('Access key ID for the storage service')
+            .setDesc('AWS S3 access key ID')
             .addText(text => text
-                .setPlaceholder('Enter access key ID')
-                .setValue(this.tempSettings.accessKeyId)
+                .setPlaceholder('Enter AWS access key ID')
+                .setValue(config.accessKeyId)
                 .onChange(async (value) => {
-                    this.tempSettings.accessKeyId = value;
+                    config.accessKeyId = value;
                 }));
 
-        new Setting(containerEl)
+        // Secret Access Key
+        new Setting(this.settingsContainer)
             .setName('Secret Access Key')
-            .setDesc('Secret access key for the storage service')
+            .setDesc('AWS S3 secret access key')
             .addText(text => text
-                .setPlaceholder('Enter secret access key')
-                .setValue(this.tempSettings.secretAccessKey)
+                .setPlaceholder('Enter AWS secret access key')
+                .setValue(config.secretAccessKey)
                 .onChange(async (value) => {
-                    this.tempSettings.secretAccessKey = value;
+                    config.secretAccessKey = value;
                 }));
 
-        new Setting(containerEl)
+        // Region
+        new Setting(this.settingsContainer)
             .setName('Region')
-            .setDesc('Storage region (use "auto" for R2)')
+            .setDesc('AWS region (e.g., us-east-1, ap-northeast-1)')
             .addText(text => text
-                .setPlaceholder('Enter region')
-                .setValue(this.tempSettings.region)
+                .setPlaceholder('Enter AWS region')
+                .setValue(config.region)
                 .onChange(async (value) => {
-                    this.tempSettings.region = value;
+                    config.region = value;
                 }));
 
-        new Setting(containerEl)
+        // Bucket
+        new Setting(this.settingsContainer)
             .setName('Bucket')
-            .setDesc('Storage bucket name')
+            .setDesc('S3 bucket name')
             .addText(text => text
-                .setPlaceholder('Enter bucket name')
-                .setValue(this.tempSettings.bucket)
+                .setPlaceholder('Enter S3 bucket name')
+                .setValue(config.bucket)
                 .onChange(async (value) => {
-                    this.tempSettings.bucket = value;
+                    config.bucket = value;
                 }));
 
-        new Setting(containerEl)
+        // Custom Domain
+        new Setting(this.settingsContainer)
             .setName('Custom Domain')
-            .setDesc('Custom domain for CDN (optional)')
+            .setDesc('Custom domain for CDN (e.g., cdn.example.com)')
             .addText(text => text
                 .setPlaceholder('Enter custom domain')
-                .setValue(this.tempSettings.customDomain)
+                .setValue(config.customDomain)
                 .onChange(async (value) => {
-                    this.tempSettings.customDomain = value;
+                    config.customDomain = value;
                 }));
 
-        new Setting(containerEl)
+        // Path Prefix
+        new Setting(this.settingsContainer)
             .setName('Path Prefix')
-            .setDesc('Path prefix for uploaded files')
+            .setDesc('Path prefix for uploaded files (e.g., images/)')
             .addText(text => text
                 .setPlaceholder('Enter path prefix')
-                .setValue(this.tempSettings.pathPrefix)
+                .setValue(config.pathPrefix)
                 .onChange(async (value) => {
-                    this.tempSettings.pathPrefix = value;
+                    config.pathPrefix = value;
+                }));
+    }
+
+    private renderR2Settings() {
+        const config = this.tempSettings.r2Config;
+
+        // Access Key ID
+        new Setting(this.settingsContainer)
+            .setName('Access Key ID')
+            .setDesc('R2 access key ID')
+            .addText(text => text
+                .setPlaceholder('Enter R2 access key ID')
+                .setValue(config.accessKeyId)
+                .onChange(async (value) => {
+                    config.accessKeyId = value;
                 }));
 
-        new Setting(containerEl)
+        // Secret Access Key
+        new Setting(this.settingsContainer)
+            .setName('Secret Access Key')
+            .setDesc('R2 secret access key')
+            .addText(text => text
+                .setPlaceholder('Enter R2 secret access key')
+                .setValue(config.secretAccessKey)
+                .onChange(async (value) => {
+                    config.secretAccessKey = value;
+                }));
+
+        // Bucket
+        new Setting(this.settingsContainer)
+            .setName('Bucket')
+            .setDesc('R2 bucket name')
+            .addText(text => text
+                .setPlaceholder('Enter R2 bucket name')
+                .setValue(config.bucket)
+                .onChange(async (value) => {
+                    config.bucket = value;
+                }));
+
+        // Custom Domain
+        new Setting(this.settingsContainer)
+            .setName('Custom Domain')
+            .setDesc('Custom domain for R2 (e.g., r2.example.com)')
+            .addText(text => text
+                .setPlaceholder('Enter custom domain')
+                .setValue(config.customDomain)
+                .onChange(async (value) => {
+                    config.customDomain = value;
+                }));
+
+        // Path Prefix
+        new Setting(this.settingsContainer)
+            .setName('Path Prefix')
+            .setDesc('Path prefix for uploaded files (e.g., images/)')
+            .addText(text => text
+                .setPlaceholder('Enter path prefix')
+                .setValue(config.pathPrefix)
+                .onChange(async (value) => {
+                    config.pathPrefix = value;
+                }));
+    }
+
+    private createSaveButton() {
+        new Setting(this.settingsContainer)
             .addButton(button => button
-                .setButtonText('Save')
+                .setButtonText('Save Settings')
+                .setCta()
                 .onClick(async () => {
                     this.plugin.settings = { ...this.tempSettings };
                     await this.plugin.saveSettings();
