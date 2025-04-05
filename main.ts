@@ -2,34 +2,76 @@ import { Plugin, Editor, Notice, Setting, App, PluginSettingTab } from 'obsidian
 import { S3Client, PutObjectCommand, HeadObjectCommand } from '@aws-sdk/client-s3';
 import { createHash } from 'crypto';
 
+interface StorageServiceConfig {
+    getEndpoint(bucket: string): string;
+    getFileUrl(bucket: string, key: string): string;
+    getRegion(): string;
+}
+
+class S3Config implements StorageServiceConfig {
+    constructor(private region: string, private customEndpoint?: string) {}
+
+    getEndpoint(bucket: string): string {
+        return this.customEndpoint || `https://s3.${this.region}.amazonaws.com`;
+    }
+
+    getFileUrl(bucket: string, key: string): string {
+        return this.customEndpoint 
+            ? `${this.customEndpoint}/${key}`
+            : `https://${bucket}.s3.${this.region}.amazonaws.com/${key}`;
+    }
+
+    getRegion(): string {
+        return this.region;
+    }
+}
+
+class R2Config implements StorageServiceConfig {
+    constructor(private customDomain?: string) {}
+
+    getEndpoint(bucket: string): string {
+        return this.customDomain 
+            ? `https://${this.customDomain}`
+            : `https://${bucket}.r2.cloudflarestorage.com`;
+    }
+
+    getFileUrl(bucket: string, key: string): string {
+        return this.customDomain
+            ? `https://${this.customDomain}/${key}`
+            : `https://${bucket}.r2.cloudflarestorage.com/${key}`;
+    }
+
+    getRegion(): string {
+        return 'auto';
+    }
+}
+
 interface S3ImageUploaderSettings {
-    // AWS S3 访问密钥 ID
+    // 存储服务类型
+    serviceType: 's3' | 'r2';
+    // 访问密钥 ID
     accessKeyId: string;
-    // AWS S3 访问密钥
+    // 访问密钥
     secretAccessKey: string;
-    // AWS 区域，例如：us-east-1, ap-northeast-1
+    // 区域
     region: string;
-    // S3 存储桶名称
+    // 存储桶名称
     bucket: string;
-    // S3 端点 URL，如果是自定义 S3 兼容服务，需要填写完整的 URL
-    endpoint: string;
-    // 图片存储路径前缀，例如：images/ 或 notes/images/
+    // 自定义域名（用于 CDN）
+    customDomain: string;
+    // 图片存储路径前缀
     pathPrefix: string;
 }
 
 const DEFAULT_SETTINGS: S3ImageUploaderSettings = {
+    serviceType: 's3',
     accessKeyId: '',
     secretAccessKey: '',
     region: 'us-east-1',
     bucket: '',
-    endpoint: '',
+    customDomain: '',
     pathPrefix: 'images/'
 };
-
-// 根据 region 生成 S3 endpoint
-function getS3Endpoint(region: string): string {
-    return `https://s3.${region}.amazonaws.com`;
-}
 
 class FileNamingService {
     constructor(
@@ -64,14 +106,38 @@ export default class S3ImageUploader extends Plugin {
     settings: S3ImageUploaderSettings;
     s3Client: S3Client;
     namingService: FileNamingService;
+    storageConfig: StorageServiceConfig;
 
     async onload() {
         await this.loadSettings();
+        this.initializeStorageConfig();
         this.initializeS3Client();
         this.namingService = new FileNamingService(this.settings, this.s3Client);
 
         this.addSettingTab(new S3ImageUploaderSettingTab(this.app, this));
 
+        this.registerEventHandlers();
+    }
+
+    private initializeStorageConfig() {
+        this.storageConfig = this.settings.serviceType === 's3'
+            ? new S3Config(this.settings.region, this.settings.customDomain)
+            : new R2Config(this.settings.customDomain);
+    }
+
+    private initializeS3Client() {
+        this.s3Client = new S3Client({
+            region: this.storageConfig.getRegion(),
+            credentials: {
+                accessKeyId: this.settings.accessKeyId,
+                secretAccessKey: this.settings.secretAccessKey,
+            },
+            endpoint: this.storageConfig.getEndpoint(this.settings.bucket),
+            forcePathStyle: false,
+        });
+    }
+
+    private registerEventHandlers() {
         this.registerEvent(
             this.app.workspace.on('editor-paste', async (evt: ClipboardEvent, editor: Editor) => {
                 if (!evt.clipboardData) return;
@@ -83,13 +149,7 @@ export default class S3ImageUploader extends Plugin {
                         evt.preventDefault();
                         const file = item.getAsFile();
                         if (file) {
-                            try {
-                                const url = await this.uploadImage(file);
-                                editor.replaceSelection(`![](${url})`);
-                            } catch (error) {
-                                console.error('Failed to upload image:', error);
-                                new Notice('Failed to upload image. Please check the console for details.');
-                            }
+                            await this.handleFileUpload(file, editor);
                         }
                     }
                 }
@@ -107,13 +167,7 @@ export default class S3ImageUploader extends Plugin {
                         evt.preventDefault();
                         const file = item.getAsFile();
                         if (file) {
-                            try {
-                                const url = await this.uploadImage(file);
-                                editor.replaceSelection(`![](${url})`);
-                            } catch (error) {
-                                console.error('Failed to upload image:', error);
-                                new Notice('Failed to upload image. Please check the console for details.');
-                            }
+                            await this.handleFileUpload(file, editor);
                         }
                     }
                 }
@@ -130,13 +184,7 @@ export default class S3ImageUploader extends Plugin {
                 input.onchange = async (e) => {
                     const file = (e.target as HTMLInputElement).files?.[0];
                     if (file) {
-                        try {
-                            const url = await this.uploadImage(file);
-                            editor.replaceSelection(`![](${url})`);
-                        } catch (error) {
-                            console.error('Failed to upload image:', error);
-                            new Notice('Failed to upload image. Please check the console for details.');
-                        }
+                        await this.handleFileUpload(file, editor);
                     }
                 };
                 input.click();
@@ -144,61 +192,14 @@ export default class S3ImageUploader extends Plugin {
         });
     }
 
-    async loadSettings() {
-        this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
-    }
-
-    async saveSettings() {
-        await this.saveData(this.settings);
-        this.initializeS3Client();
-    }
-
-    initializeS3Client() {
-        const endpoint = this.settings.endpoint || getS3Endpoint(this.settings.region);
-        this.s3Client = new S3Client({
-            region: this.settings.region,
-            credentials: {
-                accessKeyId: this.settings.accessKeyId,
-                secretAccessKey: this.settings.secretAccessKey,
-            },
-            endpoint: endpoint,
-            forcePathStyle: false,
-        });
-    }
-
-    async handlePaste(files: FileList, editor: Editor) {
-        for (let i = 0; i < files.length; i++) {
-            const file = files[i];
-            if (file.type.startsWith('image/')) {
-                try {
-                    const url = await this.uploadImage(file);
-                    this.insertImageToEditor(editor, url, file.name);
-                } catch (error) {
-                    new Notice(`Failed to upload image: ${error.message}`);
-                }
-            }
+    private async handleFileUpload(file: File, editor: Editor) {
+        try {
+            const url = await this.uploadImage(file);
+            editor.replaceSelection(`![](${url})`);
+        } catch (error) {
+            console.error('Failed to upload image:', error);
+            new Notice('Failed to upload image. Please check the console for details.');
         }
-    }
-
-    // 生成友好的文件名
-    private generateFriendlyFilename(file: File): string {
-        // 获取当前日期，格式：YYYY/MM/DD
-        const now = new Date();
-        const year = now.getFullYear();
-        const month = String(now.getMonth() + 1).padStart(2, '0');
-        const day = String(now.getDate()).padStart(2, '0');
-        const dateStr = `${year}/${month}/${day}`;
-        
-        // 处理原始文件名
-        const originalName = file.name;
-        const ext = originalName.split('.').pop()?.toLowerCase() || '';
-        const baseName = originalName.slice(0, -(ext.length + 1));
-        
-        // 生成友好文件名：日期/原始文件名-随机字符串.扩展名
-        // 使用原始文件名的前20个字符，避免文件名过长
-        const friendlyBaseName = baseName.slice(0, 20).replace(/[^a-zA-Z0-9]/g, '-');
-        const randomStr = Math.random().toString(36).substring(2, 8);
-        return `${dateStr}/${friendlyBaseName}-${randomStr}.${ext}`;
     }
 
     async uploadImage(file: File): Promise<string> {
@@ -217,18 +218,21 @@ export default class S3ImageUploader extends Plugin {
             });
 
             await this.s3Client.send(command);
-            // 确保返回的 URL 与上传路径完全匹配
-            return `https://${this.settings.bucket}.s3.${this.settings.region}.amazonaws.com/${key}`;
+            return this.storageConfig.getFileUrl(this.settings.bucket, key);
         } catch (error) {
             console.error('Upload failed:', error);
             throw error;
         }
     }
 
-    insertImageToEditor(editor: Editor, url: string, fileName: string) {
-        const cursor = editor.getCursor();
-        const markdownImage = `![${fileName}](${url})`;
-        editor.replaceRange(markdownImage, cursor);
+    async loadSettings() {
+        this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+    }
+
+    async saveSettings() {
+        await this.saveData(this.settings);
+        this.initializeStorageConfig();
+        this.initializeS3Client();
     }
 }
 
@@ -239,28 +243,34 @@ class S3ImageUploaderSettingTab extends PluginSettingTab {
     constructor(app: App, plugin: S3ImageUploader) {
         super(app, plugin);
         this.plugin = plugin;
-        this.tempSettings = Object.assign({}, plugin.settings);
-    }
-
-    async saveSettings() {
-        Object.assign(this.plugin.settings, this.tempSettings);
-        await this.plugin.saveData(this.plugin.settings);
-        this.plugin.initializeS3Client();
-        new Notice('Settings saved successfully!');
+        this.tempSettings = { ...plugin.settings };
     }
 
     display(): void {
         const { containerEl } = this;
-
         containerEl.empty();
 
-        containerEl.createEl('h2', { text: 'S3 Image Uploader Settings' });
+        containerEl.createEl('h2', { text: 'Object Storage Settings' });
+
+        new Setting(containerEl)
+            .setName('Service Type')
+            .setDesc('Select storage service type')
+            .addDropdown(dropdown => dropdown
+                .addOption('s3', 'AWS S3')
+                .addOption('r2', 'Cloudflare R2')
+                .setValue(this.tempSettings.serviceType)
+                .onChange(async (value: 's3' | 'r2') => {
+                    this.tempSettings.serviceType = value;
+                    if (value === 'r2') {
+                        this.tempSettings.region = 'auto';
+                    }
+                }));
 
         new Setting(containerEl)
             .setName('Access Key ID')
-            .setDesc('Your AWS S3 Access Key ID')
+            .setDesc('Access key ID for the storage service')
             .addText(text => text
-                .setPlaceholder('Enter your access key ID')
+                .setPlaceholder('Enter access key ID')
                 .setValue(this.tempSettings.accessKeyId)
                 .onChange(async (value) => {
                     this.tempSettings.accessKeyId = value;
@@ -268,9 +278,9 @@ class S3ImageUploaderSettingTab extends PluginSettingTab {
 
         new Setting(containerEl)
             .setName('Secret Access Key')
-            .setDesc('Your AWS S3 Secret Access Key')
+            .setDesc('Secret access key for the storage service')
             .addText(text => text
-                .setPlaceholder('Enter your secret access key')
+                .setPlaceholder('Enter secret access key')
                 .setValue(this.tempSettings.secretAccessKey)
                 .onChange(async (value) => {
                     this.tempSettings.secretAccessKey = value;
@@ -278,7 +288,7 @@ class S3ImageUploaderSettingTab extends PluginSettingTab {
 
         new Setting(containerEl)
             .setName('Region')
-            .setDesc('AWS Region (e.g., us-east-1, ap-northeast-1)')
+            .setDesc('Storage region (use "auto" for R2)')
             .addText(text => text
                 .setPlaceholder('Enter region')
                 .setValue(this.tempSettings.region)
@@ -288,7 +298,7 @@ class S3ImageUploaderSettingTab extends PluginSettingTab {
 
         new Setting(containerEl)
             .setName('Bucket')
-            .setDesc('S3 Bucket Name')
+            .setDesc('Storage bucket name')
             .addText(text => text
                 .setPlaceholder('Enter bucket name')
                 .setValue(this.tempSettings.bucket)
@@ -297,18 +307,18 @@ class S3ImageUploaderSettingTab extends PluginSettingTab {
                 }));
 
         new Setting(containerEl)
-            .setName('Endpoint')
-            .setDesc('Optional: Custom S3 endpoint URL. Leave empty to use AWS default endpoint (https://s3.{region}.amazonaws.com). Only required for custom S3-compatible services.')
+            .setName('Custom Domain')
+            .setDesc('Custom domain for CDN (optional)')
             .addText(text => text
-                .setPlaceholder('Enter custom endpoint URL (optional)')
-                .setValue(this.tempSettings.endpoint)
+                .setPlaceholder('Enter custom domain')
+                .setValue(this.tempSettings.customDomain)
                 .onChange(async (value) => {
-                    this.tempSettings.endpoint = value;
+                    this.tempSettings.customDomain = value;
                 }));
 
         new Setting(containerEl)
             .setName('Path Prefix')
-            .setDesc('Path prefix for uploaded images (e.g., images/ or notes/images/)')
+            .setDesc('Path prefix for uploaded files')
             .addText(text => text
                 .setPlaceholder('Enter path prefix')
                 .setValue(this.tempSettings.pathPrefix)
@@ -316,13 +326,13 @@ class S3ImageUploaderSettingTab extends PluginSettingTab {
                     this.tempSettings.pathPrefix = value;
                 }));
 
-        // 添加保存按钮
         new Setting(containerEl)
             .addButton(button => button
-                .setButtonText('Save Settings')
-                .setCta()
+                .setButtonText('Save')
                 .onClick(async () => {
-                    await this.saveSettings();
+                    this.plugin.settings = { ...this.tempSettings };
+                    await this.plugin.saveSettings();
+                    new Notice('Settings saved successfully!');
                 }));
     }
 } 
