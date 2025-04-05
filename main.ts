@@ -3,11 +3,17 @@ import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import { createHash } from 'crypto';
 
 interface S3ImageUploaderSettings {
+    // AWS S3 访问密钥 ID
     accessKeyId: string;
+    // AWS S3 访问密钥
     secretAccessKey: string;
+    // AWS 区域，例如：us-east-1, ap-northeast-1
     region: string;
+    // S3 存储桶名称
     bucket: string;
+    // S3 端点 URL，如果是自定义 S3 兼容服务，需要填写完整的 URL
     endpoint: string;
+    // 图片存储路径前缀，例如：images/ 或 notes/images/
     pathPrefix: string;
 }
 
@@ -19,6 +25,11 @@ const DEFAULT_SETTINGS: S3ImageUploaderSettings = {
     endpoint: '',
     pathPrefix: 'images/'
 };
+
+// 根据 region 生成 S3 endpoint
+function getS3Endpoint(region: string): string {
+    return `https://s3.${region}.amazonaws.com`;
+}
 
 export default class S3ImageUploader extends Plugin {
     settings: S3ImageUploaderSettings;
@@ -53,13 +64,14 @@ export default class S3ImageUploader extends Plugin {
     }
 
     initializeS3Client() {
+        const endpoint = this.settings.endpoint || getS3Endpoint(this.settings.region);
         this.s3Client = new S3Client({
             region: this.settings.region,
             credentials: {
                 accessKeyId: this.settings.accessKeyId,
                 secretAccessKey: this.settings.secretAccessKey,
             },
-            endpoint: this.settings.endpoint,
+            endpoint: endpoint,
             forcePathStyle: true,
         });
     }
@@ -100,11 +112,13 @@ export default class S3ImageUploader extends Plugin {
             });
 
             await this.s3Client.send(command);
-            return `${this.settings.endpoint}/${this.settings.bucket}/${key}`;
+            const endpoint = this.settings.endpoint || getS3Endpoint(this.settings.region);
+            return `${endpoint}/${this.settings.bucket}/${key}`;
         } catch (error) {
             // 如果文件已存在（可能是并发上传），直接返回URL
             if (error.name === 'BucketAlreadyOwnedByYou') {
-                return `${this.settings.endpoint}/${this.settings.bucket}/${key}`;
+                const endpoint = this.settings.endpoint || getS3Endpoint(this.settings.region);
+                return `${endpoint}/${this.settings.bucket}/${key}`;
             }
             throw error;
         }
@@ -143,7 +157,7 @@ class S3ImageUploaderSettingTab extends PluginSettingTab {
 
         new Setting(containerEl)
             .setName('Access Key ID')
-            .setDesc('Your S3 access key ID')
+            .setDesc('Your AWS S3 Access Key ID')
             .addText(text => text
                 .setPlaceholder('Enter your access key ID')
                 .setValue(this.plugin.settings.accessKeyId)
@@ -154,7 +168,7 @@ class S3ImageUploaderSettingTab extends PluginSettingTab {
 
         new Setting(containerEl)
             .setName('Secret Access Key')
-            .setDesc('Your S3 secret access key')
+            .setDesc('Your AWS S3 Secret Access Key')
             .addText(text => text
                 .setPlaceholder('Enter your secret access key')
                 .setValue(this.plugin.settings.secretAccessKey)
@@ -165,7 +179,7 @@ class S3ImageUploaderSettingTab extends PluginSettingTab {
 
         new Setting(containerEl)
             .setName('Region')
-            .setDesc('S3 region')
+            .setDesc('AWS Region (e.g., us-east-1, ap-northeast-1)')
             .addText(text => text
                 .setPlaceholder('Enter region')
                 .setValue(this.plugin.settings.region)
@@ -176,7 +190,7 @@ class S3ImageUploaderSettingTab extends PluginSettingTab {
 
         new Setting(containerEl)
             .setName('Bucket')
-            .setDesc('S3 bucket name')
+            .setDesc('S3 Bucket Name')
             .addText(text => text
                 .setPlaceholder('Enter bucket name')
                 .setValue(this.plugin.settings.bucket)
@@ -187,9 +201,9 @@ class S3ImageUploaderSettingTab extends PluginSettingTab {
 
         new Setting(containerEl)
             .setName('Endpoint')
-            .setDesc('S3 endpoint URL')
+            .setDesc('Optional: Custom S3 endpoint URL. Leave empty to use AWS default endpoint (https://s3.{region}.amazonaws.com). Only required for custom S3-compatible services.')
             .addText(text => text
-                .setPlaceholder('Enter endpoint URL')
+                .setPlaceholder('Enter custom endpoint URL (optional)')
                 .setValue(this.plugin.settings.endpoint)
                 .onChange(async (value) => {
                     this.plugin.settings.endpoint = value;
@@ -198,7 +212,7 @@ class S3ImageUploaderSettingTab extends PluginSettingTab {
 
         new Setting(containerEl)
             .setName('Path Prefix')
-            .setDesc('Path prefix for uploaded images')
+            .setDesc('Path prefix for uploaded images (e.g., images/ or notes/images/)')
             .addText(text => text
                 .setPlaceholder('Enter path prefix')
                 .setValue(this.plugin.settings.pathPrefix)
