@@ -37,6 +37,9 @@ class S3Config implements StorageServiceConfig {
 }
 
 class R2Config implements StorageServiceConfig {
+    private baseEndpoint: string;
+    private bucketFromEndpoint: string | null = null;
+
     constructor(
         private accessKeyId: string,
         private secretAccessKey: string,
@@ -46,20 +49,34 @@ class R2Config implements StorageServiceConfig {
         if (!endpoint) {
             throw new Error('R2 endpoint is required');
         }
+
+        // 解析 endpoint URL
+        try {
+            const url = new URL(endpoint);
+            // 移除路径中的 bucket 名称
+            const pathParts = url.pathname.split('/').filter(p => p);
+            if (pathParts.length > 0) {
+                this.bucketFromEndpoint = pathParts[0];
+            }
+            // 构建基础 endpoint
+            url.pathname = '';
+            this.baseEndpoint = url.toString().replace(/\/$/, '');
+        } catch (e) {
+            throw new Error('Invalid R2 endpoint URL');
+        }
     }
 
     getEndpoint(bucket: string): string {
-        return this.endpoint;
+        return this.baseEndpoint;
     }
 
     getFileUrl(bucket: string, key: string): string {
         if (this.customDomain) {
             return `https://${this.customDomain}/${key}`;
         }
-        // 确保 endpoint 不以斜杠结尾，key 不以斜杠开头
-        const cleanEndpoint = this.endpoint.replace(/\/+$/, '');
-        const cleanKey = key.replace(/^\/+/, '');
-        return `${cleanEndpoint}/${cleanKey}`;
+        // 使用从 endpoint 中提取的 bucket 名称，如果存在的话
+        const actualBucket = this.bucketFromEndpoint || bucket;
+        return `${this.baseEndpoint}/${actualBucket}/${key}`;
     }
 
     getRegion(): string {
@@ -197,7 +214,7 @@ export default class S3ImageUploader extends Plugin {
                 secretAccessKey: config.secretAccessKey
             },
             endpoint: this.storageConfig.getEndpoint(config.bucket),
-            forcePathStyle: true
+            forcePathStyle: true  // 对 R2 和 S3 都使用 path style
         };
 
         // 如果是 R2，添加特殊配置

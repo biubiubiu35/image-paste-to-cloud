@@ -1,221 +1,122 @@
-# Obsidian Object Storage Uploader (OOSU)
+# Obsidian Object Storage Uploader
 
-一个简单高效的 Obsidian 插件，支持将图片**自动上传**到各种对象存储服务（如 AWS S3、Cloudflare R2 等）。只需简单的复制粘贴或拖拽操作，图片就会自动上传到云端并插入 Markdown 链接。
+> 一个简单高效的 Obsidian 插件，支持将图片自动上传到对象存储服务（AWS S3、Cloudflare R2 等）。
 
-## 🚀 Quick Start
+## 目录
 
-### 1. 安装插件
-1. 在 Obsidian 中打开设置
-2. 进入社区插件
-3. 点击浏览社区插件
-4. 搜索 "Obsidian Object Storage Uploader"
-5. 点击安装
+- [功能特性](#功能特性)
+- [安装](#安装)
+- [快速开始](#快速开始)
+- [详细配置](#详细配置)
+  - [AWS S3 配置](#aws-s3-配置)
+  - [Cloudflare R2 配置](#cloudflare-r2-配置)
+  - [自定义域名配置](#自定义域名配置)
+- [使用方法](#使用方法)
+- [开发](#开发)
+- [贡献](#贡献)
+- [许可证](#许可证)
 
-### 2. 配置存储服务（以 Cloudflare R2 为例）
-1. 在 Cloudflare 控制台创建 R2 存储桶
-2. 获取 Access Key ID 和 Secret Access Key
-3. 获取 R2 endpoint URL（格式：`https://{accountId}.r2.cloudflarestorage.com`）
-4. 在插件设置中：
-   - 选择服务类型：Cloudflare R2
-   - 填入 Access Key ID 和 Secret Access Key
-   - 填入存储桶名称
-   - 填入 R2 endpoint URL
-   - 其他设置保持默认即可
+## 功能特性
 
-### 3. 开始使用
-- 复制图片并粘贴到编辑器中
-- 或直接拖拽图片到编辑器
-- 图片会自动上传并插入链接
+- 🚀 一键上传：复制粘贴或拖拽图片，自动上传到云端
+- 🌐 支持多种存储服务：AWS S3、Cloudflare R2
+- 📁 智能文件管理：自动生成唯一文件名，按日期组织
+- 🔒 安全可靠：支持 HTTPS，安全的凭证管理
 
-## ✨ 特性
+## 安装
 
-- 🚀 **一键上传**: 复制粘贴或拖拽图片，自动上传到云端
-- 🖼️ 支持直接粘贴图片上传
-- 🖱️ 支持拖拽图片上传
-- 🔄 智能文件名管理，避免冲突
-- 📁 支持自定义存储路径
-- 🌐 支持多种对象存储服务
-- ⚙️ 简单直观的设置界面
-- 🔒 安全的凭证管理
+1. 打开 Obsidian 设置
+2. 进入"第三方插件"
+3. 关闭"安全模式"
+4. 点击"浏览"，搜索 "Object Storage Uploader"
+5. 安装并启用插件
 
-## 🌐 支持的存储服务
+## 快速开始
 
-- AWS S3
-- Cloudflare R2
-- 其他 S3 兼容服务
+### 基础配置
 
-## ⚙️ 详细配置
+1. 打开插件设置
+2. 选择存储服务类型（S3 或 R2）
+3. 填写相应的配置信息
+4. 点击保存
 
-### 1. 基本设置
+### 开始使用
 
-在插件设置中配置以下信息：
+- **粘贴上传**：复制图片后直接粘贴到编辑器
+- **拖拽上传**：将图片文件拖入编辑器
+- **文件选择**：使用命令面板选择"插入图片"
 
-- **Service Type**: 选择存储服务类型（AWS S3 或 Cloudflare R2）
-- **Access Key ID**: 对象存储服务的访问密钥 ID
-- **Secret Access Key**: 对象存储服务的访问密钥
-- **Region**: 存储区域（仅 S3 需要）
-- **Bucket**: 存储桶名称
-- **Endpoint**: 服务端点 URL
-  - S3: 可选，默认使用官方端点
-  - R2: 必填，格式为 `https://{accountId}.r2.cloudflarestorage.com`
-- **Custom Domain**: 自定义域名（用于 CDN 加速）
-- **Path Prefix**: 图片存储路径前缀（例如：images/）
+## 详细配置
 
-### 2. 存储服务配置
-
-#### Cloudflare R2（推荐）
-
-1. **创建存储桶**：
-   - 登录 Cloudflare 控制台
-   - 进入 R2 页面
-   - 点击 "Create bucket"
-   - 输入存储桶名称
-   - 点击 "Create bucket" 完成创建
-
-2. **获取访问凭证**：
-   - 在 R2 页面，点击 "Manage R2 API Tokens"
-   - 点击 "Create API Token"
-   - 选择权限（建议选择 "Edit" 权限）
-   - 选择要访问的存储桶
-   - 点击 "Create API Token"
-   - 保存生成的 Access Key ID 和 Secret Access Key
-
-3. **配置 CORS**：
-   - 在存储桶设置中找到 "CORS" 选项
-   - 添加以下 CORS 配置：
-   ```json
-   {
-       "corsRules": [
-           {
-               "allowedHeaders": ["*"],
-               "allowedMethods": ["GET", "PUT", "POST", "DELETE", "HEAD"],
-               "allowedOrigins": [
-                   "app://obsidian.md",
-                   "app://obsidian.md/*",
-                   "capacitor://localhost",
-                   "http://localhost",
-                   "http://localhost:*",
-                   "capacitor://*",
-                   "app://*"
-               ],
-               "exposeHeaders": [
-                   "ETag",
-                   "x-amz-server-side-encryption",
-                   "x-amz-request-id",
-                   "x-amz-id-2"
-               ],
-               "maxAgeSeconds": 3000
-           }
-       ]
-   }
-   ```
-
-#### AWS S3
+### AWS S3 配置
 
 1. 创建 S3 存储桶
-2. 配置 CORS 规则（同上）
-3. 配置 CDN（可选）：
-   - 使用 CloudFront 或其他 CDN 服务
-   - 创建分发，将源站设置为 S3 存储桶
-   - 配置自定义域名（例如：cdn.example.com）
-   - 在插件设置中填入自定义域名
+2. 创建 IAM 用户并获取访问凭证
+3. 配置存储桶权限和 CORS（复制 [cors.json](cors.json) 的内容）
+4. 在插件中填写配置：
+   - Access Key ID
+   - Secret Access Key
+   - Region
+   - Bucket Name
 
-### CORS 配置
+### Cloudflare R2 配置
 
-#### AWS S3
-```json
-[
-    {
-        "AllowedHeaders": ["*"],
-        "AllowedMethods": ["GET", "PUT", "POST", "DELETE", "HEAD"],
-        "AllowedOrigins": [
-            "app://obsidian.md",
-            "app://obsidian.md/*",
-            "capacitor://localhost",
-            "http://localhost",
-            "http://localhost:*",
-            "capacitor://*",
-            "app://*"
-        ],
-        "ExposeHeaders": [
-            "ETag",
-            "x-amz-server-side-encryption",
-            "x-amz-request-id",
-            "x-amz-id-2"
-        ],
-        "MaxAgeSeconds": 3000
-    }
-]
-```
+1. **创建 R2 存储桶**：
+   - 登录 [Cloudflare Dashboard](https://dash.cloudflare.com)
+   - 进入 R2 页面
+   - 点击"Create bucket"
+   - 输入存储桶名称
 
-#### Cloudflare R2
-```json
-[
-    {
-        "AllowedOrigins": [
-            "app://obsidian.md",
-            "app://obsidian.md/*",
-            "capacitor://localhost",
-            "http://localhost",
-            "http://localhost:*",
-            "capacitor://*",
-            "app://*"
-        ],
-        "AllowedMethods": ["GET", "PUT", "POST", "DELETE", "HEAD"]
-    }
-]
-```
+2. **获取 API 凭证**：
+   - 在 R2 页面点击"Manage R2 API Tokens"
+   - 选择"Create API Token"
+   - 设置权限：
+     - 权限类型选择"Object Read & Write"
+     - 存储桶访问范围选择特定存储桶
+   - 创建令牌后保存：
+     - Access Key ID
+     - Secret Access Key
 
-主要区别：
-1. R2 的配置更简单，不需要 `corsRules` 包装
-2. R2 只需要配置必要的字段（`AllowedOrigins` 和 `AllowedMethods`）
-3. 如果需要访问特定的响应头，可以添加 `ExposeHeaders`
-4. 如果需要支持自定义请求头，可以添加 `AllowedHeaders`
+3. **获取 endpoint**：
+   - 在 R2 页面点击存储桶名称
+   - 在存储桶详情页面找到"S3 API"字段
+   - 直接复制完整的 endpoint URL 即可
+   - 例如：`https://f232e0d6b783b70a05628455b22ed1a3.r2.cloudflarestorage.com/cursor101`
+   - 插件会自动处理 URL 格式
 
-注意事项：
-- `AllowedOrigins` 必须是有效的 HTTP Origin 值（scheme://host[:port]）
-- CORS 规则可能需要最多 30 秒才能生效
-- 只有跨域请求才会包含 CORS 响应头
+4. **配置 CORS**：
+   - 在存储桶设置中找到"CORS"选项
+   - 复制 [cors.json](cors.json) 的内容并粘贴
 
-[参考 Cloudflare R2 CORS 配置文档](https://developers.cloudflare.com/r2/buckets/cors/#common-issues)
+### 自定义域名配置
 
-## 💡 使用方法
+#### Cloudflare R2 自定义域名
 
-### 上传图片
+1. **创建自定义域名**：
+   - 在 Cloudflare 控制面板中选择你的域名
+   - 进入"DNS"设置
+   - 添加新的 CNAME 记录：
+     - 名称：如 `images`
+     - 目标：你的 R2 endpoint
+     - 代理状态：开启（橙色云朵）
 
-1. **粘贴上传**:
-   - 复制图片到剪贴板
-   - 在 Obsidian 编辑器中粘贴
-   - 图片会**自动上传到云端**并插入 Markdown 链接
+2. **插件配置**：
+   - 在插件设置中填写自定义域名：
+     ```
+     https://images.yourdomain.com
+     ```
 
-2. **拖拽上传**:
-   - 直接拖拽图片到编辑器中
-   - 图片会**自动上传到云端**并插入 Markdown 链接
+## 使用方法
 
-3. **插入图片**:
-   - 使用命令面板或快捷键
-   - 选择本地图片文件
-   - 图片会**自动上传到云端**并插入 Markdown 链接
+### 文件命名规则
 
-### 文件名生成规则
-
-所有上传的图片都会使用统一的命名规则：
-- 目录结构：`{pathPrefix}{YYYY}/{MM}/{DD}/`
+上传的图片将按以下规则组织：
+- 目录结构：`{pathPrefix}/{YYYY}/{MM}/{DD}/`
 - 文件名格式：`{originalName}-{hash}.{ext}`
-  - `originalName`: 原始文件名（去除特殊字符）
-  - `hash`: 文件内容的 MD5 哈希值（前8位）
-  - `ext`: 文件扩展名
 
-例如：
-- `images/2024/03/15/screenshot-1a2b3c4d.png`
-- `images/2024/03/15/clipboard-5e6f7g8h.png`
+示例：`images/2024/03/15/screenshot-1a2b3c4d.png`
 
-## 🔜 即将推出的功能
-
-1. **更多存储服务支持**
-   - 其他 S3 兼容服务
-
-## 🛠️ 开发
+## 开发
 
 ```bash
 # 安装依赖
@@ -227,19 +128,14 @@ npm run dev
 # 构建
 npm run build
 
-# 安装到 Obsidian 开发仓库
+# 安装到开发环境
 npm run install-plugin
 ```
 
-## 🤝 贡献
+## 贡献
 
 欢迎提交 Issue 和 Pull Request！
 
-## 📄 许可证
+## 许可证
 
-MIT License
-
-## 🙏 致谢
-
-- [Obsidian](https://obsidian.md) - 优秀的笔记应用
-- [AWS SDK](https://aws.amazon.com/sdk-for-javascript/) - AWS 开发工具包
+[MIT License](LICENSE)
