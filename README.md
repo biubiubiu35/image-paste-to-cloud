@@ -37,6 +37,7 @@
 
 ### AWS S3 Configuration
 
+
 1. Create an S3 bucket
 2. Create an IAM user and obtain access credentials
 3. Configure bucket permissions and CORS (copy content from [cors.json](cors.json))
@@ -51,6 +52,9 @@
    - Select your S3 bucket as the origin
    - Configure custom domain (e.g., `images.yourdomain.com`)
    - Fill in the custom domain in plugin settings
+  
+<img src="https://github.com/user-attachments/assets/3ca97844-5013-4aa1-a4b6-caf7bd46c8ec" width="600">
+
 
 ### Cloudflare R2 Configuration
 
@@ -70,11 +74,14 @@
      - Access Key ID
      - Secret Access Key
 
+<img src="https://github.com/user-attachments/assets/17f0557e-385e-4974-802b-fce35859cdf8" width="600">
+
+
 3. **Get Endpoint**:
    - Click bucket name in R2 page
    - Find "S3 API" field in bucket details
    - Copy the complete endpoint URL
-   - Example: `https://f232e0d6b783b70a05628455b22ed1a3.r2.cloudflarestorage.com/cursor101`
+   - Example: `https://<youraccountid>.r2.cloudflarestorage.com/<bucketname>`
    - Plugin will automatically handle URL format
 
 4. **Configure CORS**:
