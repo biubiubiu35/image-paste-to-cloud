@@ -123,3 +123,7 @@ Issues and Pull Requests are welcome!
 ## License
 
 [MIT License](LICENSE)
+
+## About
+
+This plugin is developed by [Roy](https://github.com/biubiubiu35), the creator of [Cursor101](https://cursor101.com/).

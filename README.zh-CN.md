@@ -122,4 +122,8 @@ npm run install-plugin
 
 ## 许可证
 
-[MIT License](LICENSE) 
+[MIT License](LICENSE)
+
+## 关于
+
+本插件由 [Roy](https://github.com/biubiubiu35) 开发，[Cursor101](https://cursor101.com/) 的创建者。 

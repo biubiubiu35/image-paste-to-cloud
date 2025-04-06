@@ -1,10 +1,10 @@
 {
-    "id": "obsidian-object-storage-uploader",
-    "name": "Obsidian Object Storage Uploader",
+    "id": "image-paste-to-cloud",
+    "name": "Image Paste to Cloud",
     "version": "1.0.0",
     "minAppVersion": "0.15.0",
-    "description": "A simple and efficient plugin for uploading images to various object storage services (AWS S3, Cloudflare R2, etc.)",
-    "author": "Your Name",
-    "authorUrl": "https://github.com/yourusername",
+    "description": "An Obsidian plugin that automatically uploads images to object storage services (AWS S3, Cloudflare R2, etc.)",
+    "author": "Roy",
+    "authorUrl": "https://github.com/biubiubiu35",
     "isDesktopOnly": false
 } 

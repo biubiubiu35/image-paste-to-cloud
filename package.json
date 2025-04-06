@@ -1,22 +1,24 @@
 {
-    "name": "obsidian-s3-image-uploader",
+    "name": "obsidian-image-paste-to-cloud",
     "version": "1.0.0",
-    "description": "A simple and efficient S3 image uploader for Obsidian",
+    "description": "An Obsidian plugin that automatically uploads images to object storage services",
     "main": "main.js",
     "scripts": {
         "dev": "node esbuild.config.mjs",
         "build": "tsc -noEmit -skipLibCheck && node esbuild.config.mjs production",
-        "install-plugin": "npm run build && mkdir -p ~/Documents/Obsidian/Obsidian\\ Dev/.obsidian/plugins/obsidian-s3-image-uploader-pro && cp main.js manifest.json ~/Documents/Obsidian/Obsidian\\ Dev/.obsidian/plugins/obsidian-s3-image-uploader-pro/",
+        "install-plugin": "npm run build && mkdir -p ~/Documents/Obsidian/Obsidian\\ Dev/.obsidian/plugins/image-paste-to-cloud && cp main.js manifest.json ~/Documents/Obsidian/Obsidian\\ Dev/.obsidian/plugins/image-paste-to-cloud/",
         "version": "node version-bump.mjs && git add manifest.json versions.json"
     },
     "keywords": [
         "obsidian",
         "plugin",
         "s3",
+        "r2",
         "image",
-        "upload"
+        "upload",
+        "cloud"
     ],
-    "author": "Your Name",
+    "author": "Roy <https://github.com/biubiubiu35>",
     "license": "MIT",
     "devDependencies": {
         "@types/node": "^20.0.0",
