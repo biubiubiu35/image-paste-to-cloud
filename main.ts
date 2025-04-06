@@ -2,6 +2,8 @@ import { Plugin, Editor, Notice, Setting, App, PluginSettingTab } from 'obsidian
 import { S3Client, PutObjectCommand, HeadObjectCommand } from '@aws-sdk/client-s3';
 import { createHash } from 'crypto';
 
+const PLUGIN_NAME = 'S3 Image Uploader';
+
 interface StorageServiceConfig {
     getEndpoint(bucket: string): string;
     getFileUrl(bucket: string, key: string): string;
@@ -53,6 +55,9 @@ class R2Config implements StorageServiceConfig {
         // 解析 endpoint URL
         try {
             const url = new URL(endpoint);
+            if (!url.protocol.startsWith('http')) {
+                throw new Error('Endpoint must start with http:// or https://');
+            }
             // 移除路径中的 bucket 名称
             const pathParts = url.pathname.split('/').filter(p => p);
             if (pathParts.length > 0) {
@@ -62,7 +67,7 @@ class R2Config implements StorageServiceConfig {
             url.pathname = '';
             this.baseEndpoint = url.toString().replace(/\/$/, '');
         } catch (e) {
-            throw new Error('Invalid R2 endpoint URL');
+            throw new Error(`Invalid R2 endpoint URL: ${e.message}`);
         }
     }
 
@@ -169,12 +174,19 @@ export default class S3ImageUploader extends Plugin {
 
     async onload() {
         await this.loadSettings();
-        this.initializeStorageConfig();
-        this.initializeS3Client();
+        
+        try {
+            this.initializeStorageConfig();
+            this.initializeS3Client();
+            await this.validateConfig();
+        } catch (error) {
+            // 只显示提示信息，不阻止插件启动
+            new Notice(`${PLUGIN_NAME} - Please configure the plugin settings: ${error.message}`, 8000);
+            console.error(`${PLUGIN_NAME} - Configuration error:`, error);
+        }
+
         this.namingService = new FileNamingService(this.settings, this.s3Client);
-
         this.addSettingTab(new S3ImageUploaderSettingTab(this.app, this));
-
         this.registerEventHandlers();
     }
 
@@ -285,8 +297,32 @@ export default class S3ImageUploader extends Plugin {
             const url = await this.uploadImage(file);
             editor.replaceSelection(`![](${url})`);
         } catch (error) {
-            console.error('Failed to upload image:', error);
-            new Notice('Failed to upload image. Please check the console for details.');
+            console.error(`${PLUGIN_NAME} - Upload failed:`, error);
+            let message = `${PLUGIN_NAME} - Upload failed`;
+            
+            const config = this.settings.serviceType === 's3' ? this.settings.s3Config : this.settings.r2Config;
+            const endpoint = this.storageConfig.getEndpoint(config.bucket);
+            
+            // 从 S3 错误中提取更多信息
+            const s3Error = error as any;
+            const statusCode = s3Error.$metadata?.httpStatusCode || 'unknown';
+            const requestId = s3Error.$metadata?.requestId || '';
+            const errorCode = s3Error.Code || s3Error.name || 'UnknownError';
+            const errorDetail = s3Error.Message || s3Error.message || 'Unknown error occurred';
+            
+            if (errorCode === 'NoSuchBucket') {
+                message = `${PLUGIN_NAME} - Bucket not found when accessing ${endpoint}\nBucket: "${config.bucket}"\nRequest ID: ${requestId}`;
+            } else if (errorCode === 'AccessDenied') {
+                message = `${PLUGIN_NAME} - Access denied when accessing ${endpoint}\nPlease check your credentials and bucket permissions\nRequest ID: ${requestId}`;
+            } else if (errorCode === 'NetworkError' || errorCode?.includes('Network')) {
+                message = `${PLUGIN_NAME} - Network error when accessing ${endpoint}\nPlease check your internet connection and endpoint configuration\nRequest ID: ${requestId}`;
+            } else if (errorDetail.includes('CORS')) {
+                message = `${PLUGIN_NAME} - CORS error when accessing ${endpoint}\nPlease check your bucket CORS settings\nRequest ID: ${requestId}`;
+            } else {
+                message = `${PLUGIN_NAME} - Error when accessing ${endpoint}\nError: ${errorDetail}\nRequest ID: ${requestId}`;
+            }
+            
+            new Notice(message, 8000);
         }
     }
 
@@ -295,24 +331,53 @@ export default class S3ImageUploader extends Plugin {
             ? this.settings.s3Config 
             : this.settings.r2Config;
 
-        const arrayBuffer = await file.arrayBuffer();
-        const buffer = Buffer.from(arrayBuffer);
-        
-        // 生成存储路径
-        const key = await this.namingService.generateCloudPath(file);
-
         try {
-            const command = new PutObjectCommand({
-                Bucket: config.bucket,
-                Key: key,
-                Body: buffer,
-                ContentType: file.type,
-            });
+            const arrayBuffer = await file.arrayBuffer();
+            const buffer = Buffer.from(arrayBuffer);
+            
+            // 生成存储路径
+            const key = await this.namingService.generateCloudPath(file);
 
-            await this.s3Client.send(command);
-            return this.storageConfig.getFileUrl(config.bucket, key);
+            try {
+                const command = new PutObjectCommand({
+                    Bucket: config.bucket,
+                    Key: key,
+                    Body: buffer,
+                    ContentType: file.type,
+                });
+
+                await this.s3Client.send(command);
+                
+                // 验证上传是否成功
+                try {
+                    const headCommand = new HeadObjectCommand({
+                        Bucket: config.bucket,
+                        Key: key
+                    });
+                    await this.s3Client.send(headCommand);
+                } catch (error) {
+                    throw new Error(`File uploaded but not accessible (HTTP ${error.$metadata?.httpStatusCode || 'unknown'}): ${error.message}`);
+                }
+
+                return this.storageConfig.getFileUrl(config.bucket, key);
+            } catch (error) {
+                if (error.name === 'NoSuchBucket') {
+                    throw error;
+                }
+                if (error.name === 'AccessDenied') {
+                    throw error;
+                }
+                if (error.name?.includes('Network')) {
+                    error.name = 'NetworkError';
+                    throw error;
+                }
+                if (error.$metadata?.httpStatusCode) {
+                    throw new Error(`HTTP ${error.$metadata.httpStatusCode}: ${error.message}`);
+                }
+                throw error;
+            }
         } catch (error) {
-            console.error('Upload failed:', error);
+            console.error(`${PLUGIN_NAME} - Upload failed:`, error);
             throw error;
         }
     }
@@ -325,6 +390,54 @@ export default class S3ImageUploader extends Plugin {
         await this.saveData(this.settings);
         this.initializeStorageConfig();
         this.initializeS3Client();
+    }
+
+    private async validateConfig() {
+        const config = this.settings.serviceType === 's3' 
+            ? this.settings.s3Config 
+            : this.settings.r2Config;
+
+        // 验证必填字段
+        const requiredFields = ['accessKeyId', 'secretAccessKey', 'bucket'] as const;
+        const missingFields = requiredFields.filter(field => !config[field]);
+        if (missingFields.length > 0) {
+            throw new Error(`Missing required fields: ${missingFields.join(', ')}`);
+        }
+
+        // 验证路径前缀格式
+        if (!config.pathPrefix.endsWith('/')) {
+            throw new Error('Path prefix must end with /');
+        }
+
+        // 验证自定义域名格式
+        if (config.customDomain && !this.isValidDomain(config.customDomain)) {
+            throw new Error('Invalid custom domain format');
+        }
+
+        // 验证存储桶连接
+        try {
+            const command = new HeadObjectCommand({
+                Bucket: config.bucket,
+                Key: '.obsidian-test-connection'
+            });
+            await this.s3Client.send(command);
+        } catch (error) {
+            if (error.name === 'NoSuchKey') {
+                // 这是正常的，说明可以连接到存储桶
+                return;
+            }
+            if (error.name === 'NoSuchBucket') {
+                throw new Error(`Bucket "${config.bucket}" not found. Please check your configuration.`);
+            }
+            if (error.name === 'AccessDenied') {
+                throw new Error('Access denied. Please check your credentials and bucket permissions.');
+            }
+            throw new Error(`Failed to connect to storage: ${error.message}`);
+        }
+    }
+
+    private isValidDomain(domain: string): boolean {
+        return /^[a-zA-Z0-9][a-zA-Z0-9-_.]*[a-zA-Z0-9]$/.test(domain);
     }
 }
 
