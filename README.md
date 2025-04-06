@@ -1,123 +1,125 @@
-# Image Paste to Cloud
+# Image Paste to Cloud for Obsidian
 
-> 一个简单高效的 Obsidian 插件，支持将图片自动上传到对象存储服务（AWS S3、Cloudflare R2 等）。
+> An Obsidian plugin that automatically uploads images to object storage services (AWS S3, Cloudflare R2, etc.).
 
-## 功能特性
+[中文文档](README.zh-CN.md)
 
-- 🚀 一键上传：复制粘贴或拖拽图片，自动上传到云端
-- 🌐 支持多种存储服务：AWS S3、Cloudflare R2
-- 📁 智能文件管理：自动生成唯一文件名，按日期组织
+## Features
 
-## 安装
+- 🚀 One-click Upload: Copy-paste or drag images to automatically upload to the cloud
+- 🌐 Multiple Storage Services: Support for AWS S3, Cloudflare R2
+- 📁 Smart File Management: Auto-generate unique filenames, organized by date
 
-1. 打开 Obsidian 设置
-2. 进入"第三方插件"
-3. 关闭"安全模式"
-4. 点击"浏览"，搜索 "Image Paste to Cloud"
-5. 安装并启用插件
+## Installation
 
-## 快速开始
+1. Open Obsidian Settings
+2. Go to "Community Plugins"
+3. Disable "Safe Mode"
+4. Click "Browse" and search for "Image Paste to Cloud"
+5. Install and enable the plugin
 
-### 基础配置
+## Quick Start
 
-1. 打开插件设置
-2. 选择存储服务类型（S3 或 R2）
-3. 填写相应的配置信息
-4. 点击保存
+### Basic Configuration
 
-### 开始使用
+1. Open plugin settings
+2. Select storage service type (S3 or R2)
+3. Fill in the corresponding configuration information
+4. Click Save
 
-- **粘贴上传**：复制图片后直接粘贴到编辑器
-- **拖拽上传**：将图片文件拖入编辑器
-- **文件选择**：使用命令面板选择"插入图片"
+### Getting Started
 
-## 详细配置
+- **Paste Upload**: Copy and paste images directly into the editor
+- **Drag Upload**: Drag image files into the editor
+- **File Selection**: Use command palette to select "Insert Image"
 
-### AWS S3 配置
+## Detailed Configuration
 
-1. 创建 S3 存储桶
-2. 创建 IAM 用户并获取访问凭证
-3. 配置存储桶权限和 CORS（复制 [cors.json](cors.json) 的内容）
-4. 在插件中填写配置：
+### AWS S3 Configuration
+
+1. Create an S3 bucket
+2. Create an IAM user and obtain access credentials
+3. Configure bucket permissions and CORS (copy content from [cors.json](cors.json))
+4. Fill in the plugin configuration:
    - Access Key ID
    - Secret Access Key
    - Region
    - Bucket Name
 
-5. **配置 CDN（可选）**：
-   - 在 CloudFront 创建新的分配
-   - 源站选择你的 S3 存储桶
-   - 配置自定义域名（如 `images.yourdomain.com`）
-   - 在插件设置中填写自定义域名
+5. **Configure CDN (Optional)**:
+   - Create a new distribution in CloudFront
+   - Select your S3 bucket as the origin
+   - Configure custom domain (e.g., `images.yourdomain.com`)
+   - Fill in the custom domain in plugin settings
 
-### Cloudflare R2 配置
+### Cloudflare R2 Configuration
 
-1. **创建 R2 存储桶**：
-   - 登录 [Cloudflare Dashboard](https://dash.cloudflare.com)
-   - 进入 R2 页面
-   - 点击"Create bucket"
-   - 输入存储桶名称
+1. **Create R2 Bucket**:
+   - Log in to [Cloudflare Dashboard](https://dash.cloudflare.com)
+   - Go to R2 page
+   - Click "Create bucket"
+   - Enter bucket name
 
-2. **获取 API 凭证**：
-   - 在 R2 页面点击"Manage R2 API Tokens"
-   - 选择"Create API Token"
-   - 设置权限：
-     - 权限类型选择"Object Read & Write"
-     - 存储桶访问范围选择特定存储桶
-   - 创建令牌后保存：
+2. **Get API Credentials**:
+   - Click "Manage R2 API Tokens" in R2 page
+   - Select "Create API Token"
+   - Set permissions:
+     - Permission type: "Object Read & Write"
+     - Bucket access: Select specific bucket
+   - Save after creation:
      - Access Key ID
      - Secret Access Key
 
-3. **获取 endpoint**：
-   - 在 R2 页面点击存储桶名称
-   - 在存储桶详情页面找到"S3 API"字段
-   - 直接复制完整的 endpoint URL 即可
-   - 例如：`https://f232e0d6b783b70a05628455b22ed1a3.r2.cloudflarestorage.com/cursor101`
-   - 插件会自动处理 URL 格式
+3. **Get Endpoint**:
+   - Click bucket name in R2 page
+   - Find "S3 API" field in bucket details
+   - Copy the complete endpoint URL
+   - Example: `https://f232e0d6b783b70a05628455b22ed1a3.r2.cloudflarestorage.com/cursor101`
+   - Plugin will automatically handle URL format
 
-4. **配置 CORS**：
-   - 在存储桶设置中找到"CORS"选项
-   - 复制 [cors.json](cors.json) 的内容并粘贴
+4. **Configure CORS**:
+   - Find "CORS" option in bucket settings
+   - Copy content from [cors.json](cors.json) and paste
 
-5. **配置自定义域名（可选）**：
-   - 在 Cloudflare 控制面板中选择你的域名
-   - 进入"DNS"设置
-   - 添加新的 CNAME 记录：
-     - 名称：如 `images`
-     - 目标：你的 R2 endpoint
-     - 代理状态：开启（橙色云朵）
-   - 在插件设置中填写自定义域名：`images.yourdomain.com`
+5. **Configure Custom Domain (Optional)**:
+   - Select your domain in Cloudflare dashboard
+   - Go to "DNS" settings
+   - Add new CNAME record:
+     - Name: e.g., `images`
+     - Target: Your R2 endpoint
+     - Proxy status: Enabled (orange cloud)
+   - Fill in custom domain in plugin settings: `images.yourdomain.com`
 
-## 使用方法
+## Usage
 
-### 文件命名规则
+### File Naming Rules
 
-上传的图片将按以下规则组织：
-- 目录结构：`{pathPrefix}/{YYYY}/{MM}/{DD}/`
-- 文件名格式：`{originalName}-{hash}.{ext}`
+Uploaded images are organized as follows:
+- Directory structure: `{pathPrefix}/{YYYY}/{MM}/{DD}/`
+- Filename format: `{originalName}-{hash}.{ext}`
 
-示例：`images/2024/03/15/screenshot-1a2b3c4d.png`
+Example: `images/2024/03/15/screenshot-1a2b3c4d.png`
 
-## 开发
+## Development
 
 ```bash
-# 安装依赖
+# Install dependencies
 npm install
 
-# 开发模式
+# Development mode
 npm run dev
 
-# 构建
+# Build
 npm run build
 
-# 安装到开发环境
+# Install to development environment
 npm run install-plugin
 ```
 
-## 贡献
+## Contributing
 
-欢迎提交 Issue 和 Pull Request！
+Issues and Pull Requests are welcome!
 
-## 许可证
+## License
 
 [MIT License](LICENSE)
