@@ -395,9 +395,9 @@ class S3ImageUploaderSettingTab extends PluginSettingTab {
         // Access Key ID
         new Setting(this.settingsContainer)
             .setName('Access Key ID')
-            .setDesc('AWS S3 access key ID')
+            .setDesc('Your AWS access key ID from IAM user credentials')
             .addText(text => text
-                .setPlaceholder('Enter AWS access key ID')
+                .setPlaceholder('AKIAXXXXXXXXXXXXXXXX')
                 .setValue(config.accessKeyId)
                 .onChange(async (value) => {
                     config.accessKeyId = value;
@@ -406,9 +406,9 @@ class S3ImageUploaderSettingTab extends PluginSettingTab {
         // Secret Access Key
         new Setting(this.settingsContainer)
             .setName('Secret Access Key')
-            .setDesc('AWS S3 secret access key')
+            .setDesc('Your AWS secret access key from IAM user credentials')
             .addText(text => text
-                .setPlaceholder('Enter AWS secret access key')
+                .setPlaceholder('Enter your secret access key')
                 .setValue(config.secretAccessKey)
                 .onChange(async (value) => {
                     config.secretAccessKey = value;
@@ -417,9 +417,9 @@ class S3ImageUploaderSettingTab extends PluginSettingTab {
         // Region
         new Setting(this.settingsContainer)
             .setName('Region')
-            .setDesc('AWS region (e.g., us-east-1, ap-northeast-1)')
+            .setDesc('AWS region where your bucket is located (e.g., us-east-1)')
             .addText(text => text
-                .setPlaceholder('Enter AWS region')
+                .setPlaceholder('us-east-1')
                 .setValue(config.region)
                 .onChange(async (value) => {
                     config.region = value;
@@ -428,9 +428,9 @@ class S3ImageUploaderSettingTab extends PluginSettingTab {
         // Bucket
         new Setting(this.settingsContainer)
             .setName('Bucket')
-            .setDesc('S3 bucket name')
+            .setDesc('Name of your S3 bucket')
             .addText(text => text
-                .setPlaceholder('Enter S3 bucket name')
+                .setPlaceholder('my-image-bucket')
                 .setValue(config.bucket)
                 .onChange(async (value) => {
                     config.bucket = value;
@@ -439,9 +439,9 @@ class S3ImageUploaderSettingTab extends PluginSettingTab {
         // Custom Domain
         new Setting(this.settingsContainer)
             .setName('Custom Domain')
-            .setDesc('Custom domain for CDN (e.g., cdn.example.com)')
+            .setDesc('Optional: Your CloudFront or custom CDN domain (without https://)')
             .addText(text => text
-                .setPlaceholder('Enter custom domain')
+                .setPlaceholder('images.yourdomain.com')
                 .setValue(config.customDomain)
                 .onChange(async (value) => {
                     config.customDomain = value;
@@ -450,9 +450,9 @@ class S3ImageUploaderSettingTab extends PluginSettingTab {
         // Path Prefix
         new Setting(this.settingsContainer)
             .setName('Path Prefix')
-            .setDesc('Path prefix for uploaded files (e.g., images/)')
+            .setDesc('Prefix for uploaded files (e.g., images/). Must end with /')
             .addText(text => text
-                .setPlaceholder('Enter path prefix')
+                .setPlaceholder('images/')
                 .setValue(config.pathPrefix)
                 .onChange(async (value) => {
                     config.pathPrefix = value;
@@ -461,9 +461,9 @@ class S3ImageUploaderSettingTab extends PluginSettingTab {
         // Endpoint
         new Setting(this.settingsContainer)
             .setName('Endpoint')
-            .setDesc('S3 endpoint URL (optional)')
+            .setDesc('Optional: Custom S3-compatible endpoint URL (for non-AWS services)')
             .addText(text => text
-                .setPlaceholder('https://s3.amazonaws.com')
+                .setPlaceholder('https://s3.custom-provider.com')
                 .setValue(config.endpoint || '')
                 .onChange(async (value) => {
                     config.endpoint = value;
@@ -476,9 +476,9 @@ class S3ImageUploaderSettingTab extends PluginSettingTab {
         // Access Key ID
         new Setting(this.settingsContainer)
             .setName('Access Key ID')
-            .setDesc('R2 access key ID')
+            .setDesc('Your R2 access key ID from API token')
             .addText(text => text
-                .setPlaceholder('Enter R2 access key ID')
+                .setPlaceholder('Enter your R2 access key ID')
                 .setValue(config.accessKeyId)
                 .onChange(async (value) => {
                     config.accessKeyId = value;
@@ -487,9 +487,9 @@ class S3ImageUploaderSettingTab extends PluginSettingTab {
         // Secret Access Key
         new Setting(this.settingsContainer)
             .setName('Secret Access Key')
-            .setDesc('R2 secret access key')
+            .setDesc('Your R2 secret access key from API token')
             .addText(text => text
-                .setPlaceholder('Enter R2 secret access key')
+                .setPlaceholder('Enter your R2 secret access key')
                 .setValue(config.secretAccessKey)
                 .onChange(async (value) => {
                     config.secretAccessKey = value;
@@ -498,9 +498,9 @@ class S3ImageUploaderSettingTab extends PluginSettingTab {
         // Bucket
         new Setting(this.settingsContainer)
             .setName('Bucket')
-            .setDesc('R2 bucket name')
+            .setDesc('Name of your R2 bucket')
             .addText(text => text
-                .setPlaceholder('Enter R2 bucket name')
+                .setPlaceholder('my-image-bucket')
                 .setValue(config.bucket)
                 .onChange(async (value) => {
                     config.bucket = value;
@@ -509,9 +509,9 @@ class S3ImageUploaderSettingTab extends PluginSettingTab {
         // Custom Domain
         new Setting(this.settingsContainer)
             .setName('Custom Domain')
-            .setDesc('Custom domain for R2 (e.g., r2.example.com)')
+            .setDesc('Optional: Your custom domain for R2 (without https://)')
             .addText(text => text
-                .setPlaceholder('Enter custom domain')
+                .setPlaceholder('images.yourdomain.com')
                 .setValue(config.customDomain)
                 .onChange(async (value) => {
                     config.customDomain = value;
@@ -520,9 +520,9 @@ class S3ImageUploaderSettingTab extends PluginSettingTab {
         // Path Prefix
         new Setting(this.settingsContainer)
             .setName('Path Prefix')
-            .setDesc('Path prefix for uploaded files (e.g., images/)')
+            .setDesc('Prefix for uploaded files (e.g., images/). Must end with /')
             .addText(text => text
-                .setPlaceholder('Enter path prefix')
+                .setPlaceholder('images/')
                 .setValue(config.pathPrefix)
                 .onChange(async (value) => {
                     config.pathPrefix = value;
@@ -530,10 +530,10 @@ class S3ImageUploaderSettingTab extends PluginSettingTab {
 
         // Endpoint
         new Setting(this.settingsContainer)
-            .setName('Endpoint')
-            .setDesc('R2 endpoint URL (required)')
+            .setName('S3 API Endpoint')
+            .setDesc('Copy the complete S3 API endpoint URL from your R2 bucket settings')
             .addText(text => text
-                .setPlaceholder('https://{accountId}.r2.cloudflarestorage.com')
+                .setPlaceholder('https://<id>.r2.cloudflarestorage.com/bucket-name')
                 .setValue(config.endpoint)
                 .onChange(async (value) => {
                     config.endpoint = value;
