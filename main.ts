@@ -2,7 +2,7 @@ import { Plugin, Editor, Notice, Setting, App, PluginSettingTab } from 'obsidian
 import { S3Client, PutObjectCommand, HeadObjectCommand } from '@aws-sdk/client-s3';
 import { createHash } from 'crypto';
 
-const PLUGIN_NAME = 'S3 Image Uploader';
+const PLUGIN_NAME = 'Image Paste to Cloud';
 
 interface StorageServiceConfig {
     getEndpoint(bucket: string): string;

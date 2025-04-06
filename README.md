@@ -1,4 +1,4 @@
-# Obsidian Object Storage Uploader
+# Image Paste to Cloud
 
 > 一个简单高效的 Obsidian 插件，支持将图片自动上传到对象存储服务（AWS S3、Cloudflare R2 等）。
 
@@ -13,7 +13,7 @@
 1. 打开 Obsidian 设置
 2. 进入"第三方插件"
 3. 关闭"安全模式"
-4. 点击"浏览"，搜索 "Object Storage Uploader"
+4. 点击"浏览"，搜索 "Image Paste to Cloud"
 5. 安装并启用插件
 
 ## 快速开始
