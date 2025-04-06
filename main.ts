@@ -9,16 +9,26 @@ interface StorageServiceConfig {
 }
 
 class S3Config implements StorageServiceConfig {
-    constructor(private region: string, private customEndpoint?: string) {}
+    constructor(
+        private accessKeyId: string,
+        private secretAccessKey: string,
+        private region: string,
+        private endpoint?: string,
+        private customDomain?: string
+    ) {}
 
     getEndpoint(bucket: string): string {
-        return this.customEndpoint || `https://s3.${this.region}.amazonaws.com`;
+        if (this.endpoint) {
+            return this.endpoint;
+        }
+        return `https://s3.${this.region}.amazonaws.com`;
     }
 
     getFileUrl(bucket: string, key: string): string {
-        return this.customEndpoint 
-            ? `${this.customEndpoint}/${key}`
-            : `https://${bucket}.s3.${this.region}.amazonaws.com/${key}`;
+        if (this.customDomain) {
+            return `https://${this.customDomain}/${key}`;
+        }
+        return `https://${bucket}.s3.${this.region}.amazonaws.com/${key}`;
     }
 
     getRegion(): string {
@@ -27,18 +37,29 @@ class S3Config implements StorageServiceConfig {
 }
 
 class R2Config implements StorageServiceConfig {
-    constructor(private customDomain?: string) {}
+    constructor(
+        private accessKeyId: string,
+        private secretAccessKey: string,
+        private endpoint: string,
+        private customDomain?: string
+    ) {
+        if (!endpoint) {
+            throw new Error('R2 endpoint is required');
+        }
+    }
 
     getEndpoint(bucket: string): string {
-        return this.customDomain 
-            ? `https://${this.customDomain}`
-            : `https://${bucket}.r2.cloudflarestorage.com`;
+        return this.endpoint;
     }
 
     getFileUrl(bucket: string, key: string): string {
-        return this.customDomain
-            ? `https://${this.customDomain}/${key}`
-            : `https://${bucket}.r2.cloudflarestorage.com/${key}`;
+        if (this.customDomain) {
+            return `https://${this.customDomain}/${key}`;
+        }
+        // 确保 endpoint 不以斜杠结尾，key 不以斜杠开头
+        const cleanEndpoint = this.endpoint.replace(/\/+$/, '');
+        const cleanKey = key.replace(/^\/+/, '');
+        return `${cleanEndpoint}/${cleanKey}`;
     }
 
     getRegion(): string {
@@ -55,6 +76,7 @@ interface S3ImageUploaderSettings {
         secretAccessKey: string;
         region: string;
         bucket: string;
+        endpoint?: string;  // 改为可选
         customDomain: string;
         pathPrefix: string;
     };
@@ -63,6 +85,7 @@ interface S3ImageUploaderSettings {
         accessKeyId: string;
         secretAccessKey: string;
         bucket: string;
+        endpoint: string;  // 保持必需
         customDomain: string;
         pathPrefix: string;
     };
@@ -75,6 +98,7 @@ const DEFAULT_SETTINGS: S3ImageUploaderSettings = {
         secretAccessKey: '',
         region: 'us-east-1',
         bucket: '',
+        endpoint: '',  // 默认为空
         customDomain: '',
         pathPrefix: 'images/'
     },
@@ -82,6 +106,7 @@ const DEFAULT_SETTINGS: S3ImageUploaderSettings = {
         accessKeyId: '',
         secretAccessKey: '',
         bucket: '',
+        endpoint: '',  // 默认为空，但实际使用时必须提供
         customDomain: '',
         pathPrefix: 'images/'
     }
@@ -137,39 +162,50 @@ export default class S3ImageUploader extends Plugin {
     }
 
     private initializeStorageConfig() {
-        if (this.settings.serviceType === 's3') {
-            const config = this.settings.s3Config;
-            this.storageConfig = new S3Config(config.region, config.customDomain);
+        const { serviceType, s3Config, r2Config } = this.settings;
+        
+        if (serviceType === 's3') {
+            this.storageConfig = new S3Config(
+                s3Config.accessKeyId,
+                s3Config.secretAccessKey,
+                s3Config.region,
+                s3Config.endpoint,
+                s3Config.customDomain
+            );
         } else {
-            const config = this.settings.r2Config;
-            this.storageConfig = new R2Config(config.customDomain);
+            if (!r2Config.endpoint) {
+                throw new Error('R2 endpoint is required');
+            }
+            this.storageConfig = new R2Config(
+                r2Config.accessKeyId,
+                r2Config.secretAccessKey,
+                r2Config.endpoint,
+                r2Config.customDomain
+            );
         }
     }
 
     private initializeS3Client() {
-        if (this.settings.serviceType === 's3') {
-            const config = this.settings.s3Config;
-            this.s3Client = new S3Client({
-                region: this.storageConfig.getRegion(),
-                credentials: {
-                    accessKeyId: config.accessKeyId,
-                    secretAccessKey: config.secretAccessKey,
-                },
-                endpoint: this.storageConfig.getEndpoint(config.bucket),
-                forcePathStyle: false,
-            });
-        } else {
-            const config = this.settings.r2Config;
-            this.s3Client = new S3Client({
-                region: this.storageConfig.getRegion(),
-                credentials: {
-                    accessKeyId: config.accessKeyId,
-                    secretAccessKey: config.secretAccessKey,
-                },
-                endpoint: this.storageConfig.getEndpoint(config.bucket),
-                forcePathStyle: false,
-            });
+        const config = this.settings.serviceType === 's3' 
+            ? this.settings.s3Config 
+            : this.settings.r2Config;
+
+        const clientConfig: any = {
+            region: this.storageConfig.getRegion(),
+            credentials: {
+                accessKeyId: config.accessKeyId,
+                secretAccessKey: config.secretAccessKey
+            },
+            endpoint: this.storageConfig.getEndpoint(config.bucket),
+            forcePathStyle: true
+        };
+
+        // 如果是 R2，添加特殊配置
+        if (this.settings.serviceType === 'r2') {
+            clientConfig.region = 'auto';
         }
+
+        this.s3Client = new S3Client(clientConfig);
     }
 
     private registerEventHandlers() {
@@ -404,6 +440,17 @@ class S3ImageUploaderSettingTab extends PluginSettingTab {
                 .onChange(async (value) => {
                     config.pathPrefix = value;
                 }));
+
+        // Endpoint
+        new Setting(this.settingsContainer)
+            .setName('Endpoint')
+            .setDesc('S3 endpoint URL (optional)')
+            .addText(text => text
+                .setPlaceholder('https://s3.amazonaws.com')
+                .setValue(config.endpoint || '')
+                .onChange(async (value) => {
+                    config.endpoint = value;
+                }));
     }
 
     private renderR2Settings() {
@@ -462,6 +509,17 @@ class S3ImageUploaderSettingTab extends PluginSettingTab {
                 .setValue(config.pathPrefix)
                 .onChange(async (value) => {
                     config.pathPrefix = value;
+                }));
+
+        // Endpoint
+        new Setting(this.settingsContainer)
+            .setName('Endpoint')
+            .setDesc('R2 endpoint URL (required)')
+            .addText(text => text
+                .setPlaceholder('https://{accountId}.r2.cloudflarestorage.com')
+                .setValue(config.endpoint)
+                .onChange(async (value) => {
+                    config.endpoint = value;
                 }));
     }
 
