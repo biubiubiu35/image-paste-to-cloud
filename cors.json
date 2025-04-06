@@ -1,10 +1,7 @@
 [
     {
       "AllowedOrigins": [
-        "http://localhost:3000",
-        "app://obsidian.md",
-        "app://obsidian.md/*",
-        "capacitor://localhost"
+        "app://obsidian.md"
       ],
       "AllowedMethods": [
         "GET",

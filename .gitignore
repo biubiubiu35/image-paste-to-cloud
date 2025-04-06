@@ -33,3 +33,7 @@ yarn-error.log*
 ehthumbs.db
 Thumbs.db 
 .obsidian
+
+# Obsidian plugin development
+main.js
+main.js.map

@@ -38,4 +38,8 @@ esbuild.build({
     sourcemap: prod ? false : 'inline',
     treeShaking: true,
     outfile: 'main.js',
+    platform: 'node',
+    define: {
+        "process.env.NODE_ENV": prod ? '"production"' : '"development"'
+    }
 }).catch(() => process.exit(1)); 
